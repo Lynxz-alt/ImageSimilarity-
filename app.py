@@ -31,11 +31,23 @@ def prepare_dataset():
 
     image_paths = sorted(glob.glob("dataset/flowers/*.jpg"))
     vectors = []
+    valid_paths = []
+
     for path in image_paths:
-        vec = extract_features(path)
-        vectors.append(vec)
+        try:
+            vec = extract_features(path)
+            if vec is not None and vec.shape[0] > 0:
+                vectors.append(vec)
+                valid_paths.append(path)
+        except Exception as e:
+            print(f"[ERROR] Skipped {path} - {e}")
+
+    if not vectors:
+        raise ValueError("No valid image features extracted. Dataset might be corrupted.")
+
     image_vectors = np.vstack(vectors).astype("float32")
-    return image_paths, image_vectors
+    return valid_paths, image_vectors
+
 
 @st.cache_resource
 def build_index(image_vectors):
