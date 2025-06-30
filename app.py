@@ -5,6 +5,8 @@ import faiss
 import numpy as np
 import os
 import glob
+import tarfile
+import requests
 from PIL import Image
 from torchvision import transforms
 import matplotlib.pyplot as plt
