@@ -5,3 +5,4 @@ faiss-cpu
 torchvision
 matplotlib
 Pillow
+requests
