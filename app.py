@@ -5,13 +5,9 @@ import faiss
 import numpy as np
 import os
 import glob
-import tarfile
-import requests
 from PIL import Image
 from torchvision import transforms
 import matplotlib.pyplot as plt
-import tarfile
-import requests
 
 # Setup
 st.set_page_config(page_title="DINOv2 Image Similarity", layout="wide")
@@ -22,51 +18,6 @@ def load_model():
     model = timm.create_model("vit_small_patch16_224.dino", pretrained=True)
     model.eval().to(device)
     return model
-
-@st.cache_data
-def prepare_dataset():
-    os.makedirs("dataset", exist_ok=True)
-    flowers_dir = "dataset/flowers"
-    tar_path = "dataset/102flowers.tgz"
-
-    if not os.path.exists(flowers_dir):
-        st.info("Downloading flower dataset...")
-        url = "https://www.robots.ox.ac.uk/~vgg/data/flowers/102/102flowers.tgz"
-        with requests.get(url, stream=True) as r:
-            r.raise_for_status()
-            with open(tar_path, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-
-        # Extract
-        with tarfile.open(tar_path) as tar:
-            tar.extractall("dataset")
-        os.rename("dataset/jpg", flowers_dir)
-
-    image_paths = sorted(glob.glob(f"{flowers_dir}/*.jpg"))
-    vectors = []
-    valid_paths = []
-
-    for path in image_paths:
-        try:
-            vec = extract_features(path)
-            if vec is not None and vec.shape[0] > 0:
-                vectors.append(vec)
-                valid_paths.append(path)
-        except Exception as e:
-            print(f"[ERROR] Skipped {path} - {e}")
-
-    if not vectors:
-        raise ValueError("No valid image features extracted. Dataset might be corrupted.")
-
-    image_vectors = np.vstack(vectors).astype("float32")
-    return valid_paths, image_vectors
-
-@st.cache_resource
-def build_index(image_vectors):
-    index = faiss.IndexFlatL2(image_vectors.shape[1])
-    index.add(image_vectors)
-    return index
 
 def extract_features(image_input):
     transform = transforms.Compose([
@@ -84,25 +35,41 @@ def extract_features(image_input):
         features = model.forward_features(img_tensor)
         return features[:, 0].squeeze().cpu().numpy()
 
-# Load model and dataset
+@st.cache_data
+def prepare_dataset():
+    os.makedirs("dataset", exist_ok=True)
+    if not os.path.exists("dataset/flowers"):
+        st.info("Downloading flower dataset...")
+        os.system("wget -q https://www.robots.ox.ac.uk/~vgg/data/flowers/102/102flowers.tgz")
+        os.system("tar -xvzf 102flowers.tgz")
+        os.makedirs("dataset", exist_ok=True)
+        os.system("mv jpg dataset/flowers")
+    image_paths = sorted(glob.glob("dataset/flowers/*.jpg"))[:100]
+    vectors = [extract_features(p) for p in image_paths]
+    image_vectors = np.vstack(vectors).astype("float32")
+    return image_paths, image_vectors
+
+@st.cache_resource
+def build_index(image_vectors):
+    index = faiss.IndexFlatL2(image_vectors.shape[1])
+    index.add(image_vectors)
+    return index
+
+# Load everything
 model = load_model()
 image_paths, image_vectors = prepare_dataset()
 index = build_index(image_vectors)
 
-# Streamlit UI
+# UI
 st.title("🔍 DINOv2 Image Similarity Search")
 st.write("Upload an image to find similar images from the Oxford Flowers dataset.")
-
 uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
     query_image = Image.open(uploaded_file)
     st.image(query_image, caption="Uploaded Image", use_column_width=True)
-
-    # Feature extraction and similarity search
     query_vec = extract_features(query_image).reshape(1, -1)
     D, I = index.search(query_vec, k=5)
-
     st.subheader("🔎 Top-5 Most Similar Images")
     fig, ax = plt.subplots(1, 5, figsize=(15, 5))
     for i, idx in enumerate(I[0]):
