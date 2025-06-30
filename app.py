@@ -20,16 +20,31 @@ def load_model():
     return model
 
 @st.cache_data
+import tarfile
+import requests
+
+@st.cache_data
 def prepare_dataset():
     os.makedirs("dataset", exist_ok=True)
-    if not os.path.exists("dataset/flowers"):
-        st.info("Downloading flower dataset...")
-        os.system("wget -q https://www.robots.ox.ac.uk/~vgg/data/flowers/102/102flowers.tgz")
-        os.system("tar -xvzf 102flowers.tgz")
-        os.makedirs("dataset", exist_ok=True)
-        os.system("mv jpg dataset/flowers")
+    flowers_dir = "dataset/flowers"
+    tar_path = "102flowers.tgz"
 
-    image_paths = sorted(glob.glob("dataset/flowers/*.jpg"))
+    # Download if not already
+    if not os.path.exists(flowers_dir):
+        st.info("Downloading flower dataset...")
+        url = "https://www.robots.ox.ac.uk/~vgg/data/flowers/102/102flowers.tgz"
+        with requests.get(url, stream=True) as r:
+            r.raise_for_status()
+            with open(tar_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+
+        # Extract
+        with tarfile.open(tar_path) as tar:
+            tar.extractall("dataset")
+        os.rename("dataset/jpg", flowers_dir)
+
+    image_paths = sorted(glob.glob(f"{flowers_dir}/*.jpg"))
     vectors = []
     valid_paths = []
 
@@ -47,6 +62,7 @@ def prepare_dataset():
 
     image_vectors = np.vstack(vectors).astype("float32")
     return valid_paths, image_vectors
+
 
 
 @st.cache_resource
