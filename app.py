@@ -1,0 +1,90 @@
+import streamlit as st
+import torch
+import timm
+import faiss
+import numpy as np
+import os
+import glob
+from PIL import Image
+from torchvision import transforms
+import matplotlib.pyplot as plt
+
+# Setup
+st.set_page_config(page_title="DINOv2 Image Similarity", layout="wide")
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+@st.cache_resource
+def load_model():
+    model = timm.create_model("vit_small_patch16_224.dino", pretrained=True)
+    model.eval().to(device)
+    return model
+
+@st.cache_data
+def prepare_dataset():
+    os.makedirs("dataset", exist_ok=True)
+    if not os.path.exists("dataset/flowers"):
+        st.info("Downloading flower dataset...")
+        os.system("wget -q https://www.robots.ox.ac.uk/~vgg/data/flowers/102/102flowers.tgz")
+        os.system("tar -xvzf 102flowers.tgz")
+        os.makedirs("dataset", exist_ok=True)
+        os.system("mv jpg dataset/flowers")
+
+    image_paths = sorted(glob.glob("dataset/flowers/*.jpg"))
+    vectors = []
+    for path in image_paths:
+        vec = extract_features(path)
+        vectors.append(vec)
+    image_vectors = np.vstack(vectors).astype("float32")
+    return image_paths, image_vectors
+
+@st.cache_resource
+def build_index(image_vectors):
+    index = faiss.IndexFlatL2(image_vectors.shape[1])
+    index.add(image_vectors)
+    return index
+
+def extract_features(image_input):
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225]),
+    ])
+    if isinstance(image_input, str):
+        img = Image.open(image_input).convert("RGB")
+    else:
+        img = image_input.convert("RGB")
+    img_tensor = transform(img).unsqueeze(0).to(device)
+    with torch.no_grad():
+        features = model.forward_features(img_tensor)
+        return features[:, 0].squeeze().cpu().numpy()
+
+# Load model and dataset
+model = load_model()
+image_paths, image_vectors = prepare_dataset()
+index = build_index(image_vectors)
+
+# Streamlit UI
+st.title("🔍 DINOv2 Image Similarity Search")
+st.write("Upload an image to find similar images from the Oxford Flowers dataset.")
+
+uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+
+if uploaded_file:
+    query_image = Image.open(uploaded_file)
+    st.image(query_image, caption="Uploaded Image", use_column_width=True)
+
+    # Feature extraction and similarity search
+    query_vec = extract_features(query_image).reshape(1, -1)
+    D, I = index.search(query_vec, k=5)
+
+    st.subheader("🔎 Top-5 Most Similar Images")
+    fig, ax = plt.subplots(1, 5, figsize=(15, 5))
+    for i, idx in enumerate(I[0]):
+        if idx < 0 or idx >= len(image_paths):
+            continue
+        img = Image.open(image_paths[idx])
+        ax[i].imshow(img)
+        ax[i].set_title(f"Rank {i+1}")
+        ax[i].axis("off")
+    st.pyplot(fig)

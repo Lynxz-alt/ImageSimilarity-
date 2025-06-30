@@ -1,0 +1,7 @@
+streamlit
+torch
+timm
+faiss-cpu
+torchvision
+matplotlib
+Pillow
