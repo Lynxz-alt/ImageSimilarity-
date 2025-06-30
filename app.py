@@ -10,6 +10,8 @@ import requests
 from PIL import Image
 from torchvision import transforms
 import matplotlib.pyplot as plt
+import tarfile
+import requests
 
 # Setup
 st.set_page_config(page_title="DINOv2 Image Similarity", layout="wide")
@@ -22,16 +24,11 @@ def load_model():
     return model
 
 @st.cache_data
-import tarfile
-import requests
-
-@st.cache_data
 def prepare_dataset():
     os.makedirs("dataset", exist_ok=True)
     flowers_dir = "dataset/flowers"
-    tar_path = "102flowers.tgz"
+    tar_path = "dataset/102flowers.tgz"
 
-    # Download if not already
     if not os.path.exists(flowers_dir):
         st.info("Downloading flower dataset...")
         url = "https://www.robots.ox.ac.uk/~vgg/data/flowers/102/102flowers.tgz"
@@ -64,8 +61,6 @@ def prepare_dataset():
 
     image_vectors = np.vstack(vectors).astype("float32")
     return valid_paths, image_vectors
-
-
 
 @st.cache_resource
 def build_index(image_vectors):
